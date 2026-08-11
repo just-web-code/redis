@@ -1,0 +1,28 @@
+import redis;
+
+// Key/value surface. The expected output is identical with and without
+// Redis configured — that IS the assertion: an app written against this
+// package behaves the same on a laptop with no Redis and on a deployment
+// with one. Only `available()` / `ping()` differ, and those live in
+// case_availability.jwc.
+function main() {
+    redis.del("case_kv:k");
+
+    print("miss=" + redis.get("case_kv:k"));
+    print("exists_before=" + redis.exists("case_kv:k"));
+
+    print("set=" + redis.set("case_kv:k", "hello", 60));
+    print("hit=" + redis.get("case_kv:k"));
+    print("exists_after=" + redis.exists("case_kv:k"));
+
+    // Empty string is a value, not a miss.
+    redis.set("case_kv:empty", "", 60);
+    print("empty_is_not_null=" + (redis.get("case_kv:empty") == ""));
+
+    // Delete reports how many keys it removed, from both backends.
+    print("del=" + redis.del("case_kv:k"));
+    print("del_again=" + redis.del("case_kv:k"));
+    print("gone=" + redis.get("case_kv:k"));
+
+    redis.del("case_kv:empty");
+}

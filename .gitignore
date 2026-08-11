@@ -1,0 +1,10 @@
+# Copied in by tests/run.sh while a case executes; never a source file.
+tests/harness/main.jwc
+
+# Resolved dependency lockfile — the harness re-resolves from the path
+# dependency on every run, and the absolute path it records is
+# machine-specific.
+tests/harness/jwcproj.lock
+
+bin/
+.jwc-build/

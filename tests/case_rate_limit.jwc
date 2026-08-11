@@ -1,0 +1,20 @@
+import redis;
+
+// Fixed-window rate limit. Atomic on Redis (one Lua script), non-atomic
+// on the in-process fallback — but the observable result for a single
+// sequential caller is the same, which is what this pins.
+function main() {
+    redis.del("case_rate_limit:ip");
+
+    print("req1=" + redis.rate_limit("case_rate_limit:ip", 3, 60));
+    print("req2=" + redis.rate_limit("case_rate_limit:ip", 3, 60));
+    print("req3=" + redis.rate_limit("case_rate_limit:ip", 3, 60));
+    print("req4=" + redis.rate_limit("case_rate_limit:ip", 3, 60));
+    print("req5=" + redis.rate_limit("case_rate_limit:ip", 3, 60));
+
+    // A different subject has its own window.
+    print("other=" + redis.rate_limit("case_rate_limit:other", 3, 60));
+
+    redis.del("case_rate_limit:ip");
+    redis.del("case_rate_limit:other");
+}

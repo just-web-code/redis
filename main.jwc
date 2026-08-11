@@ -1,0 +1,184 @@
+namespace redis;
+
+// jwc-redis — shared cache and rate-limit state for JWC apps.
+//
+// Wraps the `redis_*` core built-ins with an ergonomic surface, and falls
+// back to the in-process `cache_*` family when Redis isn't configured.
+// That fallback is the point of the package: `ecosystem.md` §5.3 asks
+// every package to hide its capability behind an abstract API, using the
+// core driver when it exists and degrading softly when it doesn't. An app
+// written against `redis.get` / `redis.set` runs on a laptop with no
+// Redis and on a 12-pod deployment with one, unchanged.
+//
+// What the fallback does NOT give you is sharing. `redis.available()`
+// answers whether this process is actually talking to a server — branch on
+// it when correctness depends on shared state (see `rate_limit` below).
+
+// TTL meaning "no expiry", shared by both backends. Both `redis_set` and
+// `cache_set` read 0 this way, which is what lets them stand in for each
+// other without the caller's arguments changing meaning.
+const NO_EXPIRY = 0;
+
+// INCR + EXPIRE in one round-trip. Written as one script because the
+// two-call version has a window: if the process dies between them, the
+// counter is left with no TTL and never resets, so that key is blocked
+// forever. The `if n == 1` guard is what makes the window a fixed window
+// rather than a sliding one that never expires under sustained traffic.
+const RATE_SCRIPT = "local n = redis.call('INCR', KEYS[1]) " +
+                    "if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end " +
+                    "return n";
+
+// ── Layer 1: key/value ───────────────────────────────────────────────
+//
+// Signatures mirror the `cache_*` built-ins exactly, so porting an app is
+// a rename. Every one dispatches on `redis_enabled()`.
+
+// Read a key. Returns null when absent — never an empty string, which is
+// a value a caller may legitimately have stored.
+public function get(key: string) {
+    if (redis_enabled()) {
+        return redis_get(key);
+    }
+    return cache_get(key);
+}
+
+// Write a key. `ttl_secs` of 0 means no expiry.
+public function set(key: string, value: string, ttl_secs: int) {
+    if (redis_enabled()) {
+        redis_set(key, value, ttl_secs);
+        return true;
+    }
+    cache_set(key, value, ttl_secs);
+    return true;
+}
+
+// Delete a key. Returns the number removed (0 or 1) from both backends —
+// `cache_del` reports nothing, so the fallback probes first to give the
+// caller the same answer either way.
+public function del(key: string): int {
+    if (redis_enabled()) {
+        return redis_del(key);
+    }
+    if (cache_get(key) == null) {
+        return 0;
+    }
+    cache_del(key);
+    return 1;
+}
+
+public function exists(key: string): bool {
+    if (redis_enabled()) {
+        return redis_exists(key);
+    }
+    return cache_get(key) != null;
+}
+
+// Increment a counter, returning the new value. Creates the key at 1.
+//
+// The fallback is read-modify-write across two calls and so is NOT atomic:
+// two concurrent requests in the same process can both read 3 and both
+// write 4. Redis `INCR` has no such gap. Don't rely on the fallback where
+// an exact count matters — see `rate_limit`.
+public function incr(key: string): int {
+    if (redis_enabled()) {
+        return redis_incr(key);
+    }
+    let current = cache_get(key);
+    let next = 1;
+    if (current != null) {
+        next = int(current) + 1;
+    }
+    // `"" +` is the int→string conversion: JWC has no `string(v)` built-in,
+    // and `cache_set` requires a string value.
+    cache_set(key, "" + next, NO_EXPIRY);
+    return next;
+}
+
+// Set a deadline on an existing key. False when the key doesn't exist.
+public function expire(key: string, ttl_secs: int): bool {
+    if (redis_enabled()) {
+        return redis_expire(key, ttl_secs);
+    }
+    let current = cache_get(key);
+    if (current == null) {
+        return false;
+    }
+    cache_set(key, current, ttl_secs);
+    return true;
+}
+
+// ── Layer 2: ergonomics ──────────────────────────────────────────────
+
+// Read a key and parse it as JSON. Null when the key is absent, so the
+// caller's miss branch is the same shape as `get`'s.
+public function get_json(key: string) {
+    let raw = get(key);
+    if (raw == null) {
+        return null;
+    }
+    return json_parse(raw);
+}
+
+// Serialize a value and store it.
+public function set_json(key: string, value, ttl_secs: int) {
+    return set(key, json_stringify(value), ttl_secs);
+}
+
+// Fixed-window rate limit. True = allowed, false = over the limit.
+//
+// `key` should identify the subject (`"rl:" + client_ip()`), `limit` is
+// the number of requests allowed per `window_secs`.
+//
+// There is no `remember(key, ttl, loader)` counterpart to this, and there
+// can't be: JWC has no first-class functions, so a callback cannot be
+// passed. Write cache-aside inline — `get_json`, then your loader, then
+// `set_json`.
+//
+// On Redis this is one atomic script. On the fallback it is the
+// non-atomic `incr` above, and it is also per-process — which means with
+// more than one replica the effective limit is `limit * replicas`. Use
+// `available()` to fail closed if that matters:
+//
+//     if (!redis.available()) { return internalError({ error: "no cache" }); }
+//
+public function rate_limit(key: string, limit: int, window_secs: int): bool {
+    if (redis_enabled()) {
+        let n = redis_eval(RATE_SCRIPT, json_stringify([key]), json_stringify([window_secs]));
+        return int(n) <= limit;
+    }
+    let n = incr(key);
+    if (n == 1) {
+        expire(key, window_secs);
+    }
+    return n <= limit;
+}
+
+// ── Layer 3: raw ─────────────────────────────────────────────────────
+
+// Is this process actually talking to a Redis server? False means the
+// calls above are running against the in-process fallback: still correct
+// per process, but not shared between replicas.
+public function available(): bool {
+    return redis_enabled();
+}
+
+// Round-trip a PING. False when Redis is unconfigured or unreachable —
+// never raises, so a health route can call it directly.
+public function ping(): bool {
+    if (redis_enabled()) {
+        return redis_ping();
+    }
+    return false;
+}
+
+// Run a Lua script. `keys` and `args` are arrays; they are JSON-encoded
+// for the built-in, which is how KEYS/ARGV cross the boundary.
+//
+// The one entry point with no fallback — a Lua script can't be emulated
+// in-process, and returning null would be indistinguishable from a nil
+// reply by a script that really ran. Without Redis the built-in raises
+// `RedisError`, which is the honest answer; catch it if that's a state
+// your app can be in.
+public function eval(script: string, keys, args) {
+    return redis_eval(script, json_stringify(keys), json_stringify(args));
+}
