@@ -1,0 +1,22 @@
+import redis;
+
+// JSON helpers — the cache-aside shape without a callback, because JWC
+// has no first-class functions to pass one.
+function main() {
+    redis.del("case_json:user");
+
+    print("miss=" + redis.get_json("case_json:user"));
+
+    redis.set_json("case_json:user", { name: "ada", age: 36 }, 60);
+    let user = redis.get_json("case_json:user");
+    print("name=" + user.name);
+    print("age=" + user.age);
+
+    // Arrays round-trip too.
+    redis.set_json("case_json:list", [1, 2, 3], 60);
+    let list = redis.get_json("case_json:list");
+    print("len=" + length(list));
+
+    redis.del("case_json:user");
+    redis.del("case_json:list");
+}

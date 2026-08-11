@@ -1,0 +1,8 @@
+{
+    "name": "harness",
+    "version": "1.0.0",
+    "type": "app",
+    "dependencies": {
+        "jwc-redis": { "path": "../.." }
+    }
+}

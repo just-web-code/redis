@@ -1,0 +1,10 @@
+import redis;
+
+// The one case whose output differs by mode, by design: it reports
+// whether this process is really talking to a Redis server. Branch on
+// `available()` when correctness depends on shared state — with more
+// than one replica the fallback's limits are per-pod.
+function main() {
+    print("available=" + redis.available());
+    print("ping=" + redis.ping());
+}

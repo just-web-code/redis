@@ -1,0 +1,19 @@
+import redis;
+
+// Counters and TTLs.
+function main() {
+    redis.del("case_counter:c");
+
+    print("incr1=" + redis.incr("case_counter:c"));
+    print("incr2=" + redis.incr("case_counter:c"));
+    print("incr3=" + redis.incr("case_counter:c"));
+
+    print("expire=" + redis.expire("case_counter:c", 30));
+    print("expire_missing=" + redis.expire("case_counter:absent", 30));
+
+    // The counter survives having a deadline put on it.
+    print("after_expire=" + redis.get("case_counter:c"));
+
+    redis.del("case_counter:c");
+    print("after_del=" + redis.get("case_counter:c"));
+}
