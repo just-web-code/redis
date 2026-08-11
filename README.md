@@ -179,6 +179,41 @@ before they ever reach you. Permanent ones (a Lua syntax error,
 | Native AOT | Supported — `jwc build --native` emits the same behaviour |
 | Values | UTF-8 strings. Store binary as base64 |
 
+## Repository layout
+
+```
+.
+├── pkg/                    ← the published package
+│   ├── jwc-redis.jwcproj
+│   └── main.jwc
+└── tests/                  ← outside pkg/, deliberately
+    ├── case_*.jwc + .stdout.txt
+    ├── harness/            ← app project depending on ../../pkg
+    └── run.sh
+```
+
+`ecosystem.md` §3.7 puts conformance cases at `tests/case_*.jwc` *inside*
+the package. They can't live there today: each case defines its own
+`main()` so it can be run, and source discovery merges every `.jwc` under
+the package root into whatever depends on it — so a consumer, and `jwc
+publish` itself, fail with `E015: Duplicate function name: main`.
+Keeping `tests/` a sibling of `pkg/` sidesteps it, at the cost of the
+tarball not shipping the cases.
+
+[jwc-lang#58](https://github.com/just-web-code/jwc-lang/pull/58) fixes
+the discovery rule; once it ships, `tests/` can move under `pkg/` and
+this note goes away.
+
+## Publishing
+
+```bash
+cd pkg
+jwc publish
+```
+
+From `pkg/`, not the repo root — the manifest is what defines the package
+root, and running it a level up would try to publish the tests too.
+
 ## Tests
 
 ```bash
@@ -186,12 +221,11 @@ tests/run.sh                                            # fallback only
 JWC_TEST_REDIS_URL=redis://127.0.0.1:6379 tests/run.sh  # both modes
 ```
 
-Cases live at `tests/case_*.jwc` with expected output in
-`tests/<case>.stdout.txt`, the layout `ecosystem.md` §3.7 describes. Each
-case runs in both modes against the same expected file — that shared
+Each case runs in both modes against the same expected file — that shared
 expectation is what pins the fallback-is-transparent claim.
+`case_availability` is the exception, with one expectation per mode.
 
-`jwc test` currently only lints; it does not yet run package conformance
+`jwc test` currently only lints; it does not run package conformance
 cases, which is why `tests/run.sh` exists.
 
 ## License
