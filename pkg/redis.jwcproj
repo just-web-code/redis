@@ -1,0 +1,6 @@
+{
+    "name": "redis",
+    "type": "pkg",
+    "pkgVersion": "0.2.0",
+    "dependencies": {}
+}

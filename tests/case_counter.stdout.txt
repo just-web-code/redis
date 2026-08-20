@@ -1,7 +1,0 @@
-incr1=1
-incr2=2
-incr3=3
-expire=true
-expire_missing=false
-after_expire=3
-after_del=null
