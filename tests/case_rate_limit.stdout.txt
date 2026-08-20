@@ -1,6 +1,0 @@
-req1=true
-req2=true
-req3=true
-req4=false
-req5=false
-other=true
