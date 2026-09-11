@@ -69,8 +69,8 @@ it raise where it is not.
 
 ```jwc
 if (redis.enabled()) {
-    let cached = redis.get($key);
-    if ($cached != null) { return json($cached); }
+    let cached = redis.get(@key);
+    if (@cached != null) { return json(@cached); }
 }
 ```
 

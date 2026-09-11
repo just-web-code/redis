@@ -1,28 +1,28 @@
 namespace redis;
 
--- Shared cache and rate-limit state for JWC apps.
---
--- This package carries no code, and that is the whole design in 1.0.
--- `redis.get`, `set`, `del`, `incr`, `expire`, `rate_limit` and `enabled`
--- are provided by the compiler (builtins.md §8), over the driver in
--- `jwc-lang`'s `src/redis_engine.rs`. What the package supplies is the
--- name: `import redis;` resolves against a `dependencies` entry (names
--- §6.2.1), and a package import is what brings the namespace into the
--- declaration space (§6.2.3). Without this manifest the import is
--- `E0201: unknown import`.
---
--- The reason the surface is not written here is that it cannot be. RESP
--- is a binary protocol over TCP and JWC has no socket, so the driver has
--- to be Rust — `ecosystem.md` calls this the core tier and gives the
--- integration template. A pure-JWC layer on top would only be able to
--- rename what the compiler already exposes.
---
--- There is no in-process fallback. The 0.9.x version of this package fell
--- back to the `cache_*` built-ins when Redis was unconfigured; those are
--- gone from the 1.0 vocabulary, and the fallback was the wrong default
--- anyway. Sharing is the entire point: a per-process rate limiter behind
--- two replicas admits twice the limit and nothing in the response says
--- so. Without a server, every name except `enabled()` raises.
---
---   if (redis.enabled()) { ... }        -- when the call is optional
---   let n = redis.incr($key);           -- when it is not: let it raise
+// Shared cache and rate-limit state for JWC apps.
+//
+// This package carries no code, and that is the whole design in 1.0.
+// `redis.get`, `set`, `del`, `incr`, `expire`, `rate_limit` and `enabled`
+// are provided by the compiler (builtins.md §8), over the driver in
+// `jwc-lang`'s `src/redis_engine.rs`. What the package supplies is the
+// name: `import redis;` resolves against a `dependencies` entry (names
+// §6.2.1), and a package import is what brings the namespace into the
+// declaration space (§6.2.3). Without this manifest the import is
+// `E0201: unknown import`.
+//
+// The reason the surface is not written here is that it cannot be. RESP
+// is a binary protocol over TCP and JWC has no socket, so the driver has
+// to be Rust — `ecosystem.md` calls this the core tier and gives the
+// integration template. A pure-JWC layer on top would only be able to
+// rename what the compiler already exposes.
+//
+// There is no in-process fallback. The 0.9.x version of this package fell
+// back to the `cache_*` built-ins when Redis was unconfigured; those are
+// gone from the 1.0 vocabulary, and the fallback was the wrong default
+// anyway. Sharing is the entire point: a per-process rate limiter behind
+// two replicas admits twice the limit and nothing in the response says
+// so. Without a server, every name except `enabled()` raises.
+//
+//   if (redis.enabled()) { ... }        -- when the call is optional
+//   let n = redis.incr($key);           -- when it is not: let it raise
